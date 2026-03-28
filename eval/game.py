@@ -40,19 +40,31 @@ class Player:
     robot: Optional[Robot] = None
     temperature: float = 0.7
 
+    # Map provider prefixes to their required environment variable
+    _PROVIDER_API_KEYS = {
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "mistral": "MISTRAL_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "cerebras": "CEREBRAS_API_KEY",
+        "gemini": "GOOGLE_API_KEY",
+        "together": "TOGETHER_API_KEY",
+        "anyscale": "ANYSCALE_API_KEY",
+        "fireworks": "FIREWORKS_API_KEY",
+    }
+
     def verify_provider_name(self):
-        if self.model.startswith("openai"):
-            assert (
-                os.environ.get("OPENAI_API_KEY") is not None
-            ), "OpenAI API key not set"
-        if self.model.startswith("mistral"):
-            assert (
-                os.environ.get("MISTRAL_API_KEY") is not None
-            ), "Mistral API key not set"
-        if self.model.startswith("cerebras"):
-            assert (
-                os.environ.get("CEREBRAS_API_KEY") is not None
-            ), "Cerebras API key not set"
+        """Verify that the required API key is set for the model's provider."""
+        provider = self.model.split(":")[0]
+        env_var = self._PROVIDER_API_KEYS.get(provider)
+        if env_var is not None:
+            assert os.environ.get(env_var) is not None, (
+                f"{provider.capitalize()} API key not set. "
+                f"Please set the {env_var} environment variable."
+            )
+
+
+VALID_ROBOT_TYPES = {"text", "vision"}
 
 
 class Player1(Player):
@@ -63,6 +75,10 @@ class Player1(Player):
         robot_type: str = "text",
         temperature: float = 0.7,
     ):
+        if robot_type not in VALID_ROBOT_TYPES:
+            raise ValueError(
+                f"Invalid robot_type '{robot_type}'. Must be one of: {sorted(VALID_ROBOT_TYPES)}"
+            )
         self.nickname = nickname
         self.model = model
         self.robot_type = robot_type
@@ -106,6 +122,10 @@ class Player2(Player):
         robot_type: str = "text",
         temperature: float = 0.7,
     ):
+        if robot_type not in VALID_ROBOT_TYPES:
+            raise ValueError(
+                f"Invalid robot_type '{robot_type}'. Must be one of: {sorted(VALID_ROBOT_TYPES)}"
+            )
         self.nickname = nickname
         self.model = model
         self.robot_type = robot_type

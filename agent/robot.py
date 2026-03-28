@@ -171,47 +171,57 @@ class Robot(metaclass=abc.ABCMeta):
             logger.debug("DISABLE_LLM is True, returning a random move")
             return [random.choice(list(META_INSTRUCTIONS_WITH_LOWER.keys()))] 
 
-        while len(valid_moves) == 0:
-            llm_stream = self.call_llm()
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                llm_stream = self.call_llm()
 
-            # adding support for streaming the response
-            # this should make the players faster!
+                # Stream the response for lower latency
+                llm_response = ""
 
-            llm_response = ""
+                for r in llm_stream:
+                    print(r.delta, end="")
+                    llm_response += r.delta
 
-            for r in llm_stream:
-                print(r.delta, end="")
-                llm_response += r.delta
+                    # The response is a bullet point list of moves. Use regex
+                    matches = re.findall(r"- ([\w ]+)", llm_response)
+                    moves = ["".join(match) for match in matches]
+                    invalid_moves = []
+                    valid_moves = []
+                    for move in moves:
+                        cleaned_move_name = move.strip().lower()
+                        if cleaned_move_name in META_INSTRUCTIONS_WITH_LOWER.keys():
+                            if self.player_nb == 1:
+                                print(
+                                    f"[red] Player {self.player_nb} move: {cleaned_move_name}"
+                                )
+                            elif self.player_nb == 2:
+                                print(
+                                    f"[green] Player {self.player_nb} move: {cleaned_move_name}"
+                                )
+                            valid_moves.append(cleaned_move_name)
+                        else:
+                            logger.debug(f"Invalid completion: {move}")
+                            logger.debug(f"Cleaned move name: {cleaned_move_name}")
+                            invalid_moves.append(move)
 
-                # The response is a bullet point list of moves. Use regex
-                matches = re.findall(r"- ([\w ]+)", llm_response)
-                moves = ["".join(match) for match in matches]
-                invalid_moves = []
-                valid_moves = []
-                for move in moves:
-                    cleaned_move_name = move.strip().lower()
-                    if cleaned_move_name in META_INSTRUCTIONS_WITH_LOWER.keys():
-                        if self.player_nb == 1:
-                            print(
-                                f"[red] Player {self.player_nb} move: {cleaned_move_name}"
-                            )
-                        elif self.player_nb == 2:
-                            print(
-                                f"[green] Player {self.player_nb} move: {cleaned_move_name}"
-                            )
-                        valid_moves.append(cleaned_move_name)
-                    else:
-                        logger.debug(f"Invalid completion: {move}")
-                        logger.debug(f"Cleaned move name: {cleaned_move_name}")
-                        invalid_moves.append(move)
+                    if len(invalid_moves) > 1:
+                        logger.warning(f"Many invalid moves: {invalid_moves}")
 
-                if len(invalid_moves) > 1:
-                    logger.warning(f"Many invalid moves: {invalid_moves}")
+                if len(valid_moves) > 0:
+                    logger.debug(f"Next moves: {valid_moves}")
+                    return valid_moves
 
-            logger.debug(f"Next moves: {valid_moves}")
-            return valid_moves
+                logger.warning(f"No valid moves from LLM (attempt {attempt + 1}/{max_retries})")
 
-        return []  # pragma: no cover - loop only exits via return above
+            except Exception as e:
+                logger.error(f"LLM call failed (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Simple backoff
+
+        # Fallback: return a random move if all retries exhausted
+        logger.warning("All LLM retries exhausted, falling back to random move")
+        return [random.choice(list(META_INSTRUCTIONS_WITH_LOWER.keys()))]
 
     @abc.abstractmethod
     def call_llm(
