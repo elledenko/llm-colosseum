@@ -1,6 +1,9 @@
 run:
 	diambra -r ~/.diambra/roms run -l python3 script.py
 
+interactive:
+	diambra -r ~/.diambra/roms run -l python3 main.py
+
 demo:
 	diambra -r ~/.diambra/roms run -l python3 demo.py && python3 result.py
 
