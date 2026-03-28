@@ -93,7 +93,7 @@ class Robot(metaclass=abc.ABCMeta):
 
         See the MOVES dictionary for the mapping of actions to moves.
         """
-        if not self.next_steps or len(self.next_steps) == 0:
+        if len(self.next_steps) == 0:
             return 0  # No move
 
         if self.sleepy:
@@ -171,47 +171,57 @@ class Robot(metaclass=abc.ABCMeta):
             logger.debug("DISABLE_LLM is True, returning a random move")
             return [random.choice(list(META_INSTRUCTIONS_WITH_LOWER.keys()))] 
 
-        while len(valid_moves) == 0:
-            llm_stream = self.call_llm()
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                llm_stream = self.call_llm()
 
-            # adding support for streaming the response
-            # this should make the players faster!
+                # Stream the response for lower latency
+                llm_response = ""
 
-            llm_response = ""
+                for r in llm_stream:
+                    print(r.delta, end="")
+                    llm_response += r.delta
 
-            for r in llm_stream:
-                print(r.delta, end="")
-                llm_response += r.delta
+                    # The response is a bullet point list of moves. Use regex
+                    matches = re.findall(r"- ([\w ]+)", llm_response)
+                    moves = ["".join(match) for match in matches]
+                    invalid_moves = []
+                    valid_moves = []
+                    for move in moves:
+                        cleaned_move_name = move.strip().lower()
+                        if cleaned_move_name in META_INSTRUCTIONS_WITH_LOWER.keys():
+                            if self.player_nb == 1:
+                                print(
+                                    f"[red] Player {self.player_nb} move: {cleaned_move_name}"
+                                )
+                            elif self.player_nb == 2:
+                                print(
+                                    f"[green] Player {self.player_nb} move: {cleaned_move_name}"
+                                )
+                            valid_moves.append(cleaned_move_name)
+                        else:
+                            logger.debug(f"Invalid completion: {move}")
+                            logger.debug(f"Cleaned move name: {cleaned_move_name}")
+                            invalid_moves.append(move)
 
-                # The response is a bullet point list of moves. Use regex
-                matches = re.findall(r"- ([\w ]+)", llm_response)
-                moves = ["".join(match) for match in matches]
-                invalid_moves = []
-                valid_moves = []
-                for move in moves:
-                    cleaned_move_name = move.strip().lower()
-                    if cleaned_move_name in META_INSTRUCTIONS_WITH_LOWER.keys():
-                        if self.player_nb == 1:
-                            print(
-                                f"[red] Player {self.player_nb} move: {cleaned_move_name}"
-                            )
-                        elif self.player_nb == 2:
-                            print(
-                                f"[green] Player {self.player_nb} move: {cleaned_move_name}"
-                            )
-                        valid_moves.append(cleaned_move_name)
-                    else:
-                        logger.debug(f"Invalid completion: {move}")
-                        logger.debug(f"Cleaned move name: {cleaned_move_name}")
-                        invalid_moves.append(move)
+                    if len(invalid_moves) > 1:
+                        logger.warning(f"Many invalid moves: {invalid_moves}")
 
-                if len(invalid_moves) > 1:
-                    logger.warning(f"Many invalid moves: {invalid_moves}")
+                if len(valid_moves) > 0:
+                    logger.debug(f"Next moves: {valid_moves}")
+                    return valid_moves
 
-            logger.debug(f"Next moves: {valid_moves}")
-            return valid_moves
+                logger.warning(f"No valid moves from LLM (attempt {attempt + 1}/{max_retries})")
 
-        return []
+            except Exception as e:
+                logger.error(f"LLM call failed (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(0.5 * (attempt + 1))  # Simple backoff
+
+        # Fallback: return a random move if all retries exhausted
+        logger.warning("All LLM retries exhausted, falling back to random move")
+        return [random.choice(list(META_INSTRUCTIONS_WITH_LOWER.keys()))]
 
     @abc.abstractmethod
     def call_llm(
@@ -327,13 +337,13 @@ class TextRobot(Robot):
             position_prompt += "You are close to the opponent. You should attack him."
 
         power_prompt = ""
-        if super_bar_own >= 30:
-            power_prompt = "You can now use a powerfull move. The names of the powerful moves are: Megafireball, Super attack 2."
-        if super_bar_own >= 120 or super_bar_own == 0:
-            power_prompt = "You can now only use very powerfull moves. The names of the very powerful moves are: Super attack 3, Super attack 4"
+        if super_bar_own >= 120:
+            power_prompt = "You can now use very powerful moves. The names of the very powerful moves are: Super attack 3, Super attack 4."
+        elif super_bar_own >= 30:
+            power_prompt = "You can now use a powerful move. The names of the powerful moves are: Megafireball, Super attack 2."
         # Create the last action prompt
         last_action_prompt = ""
-        if len(self.previous_actions.keys()) >= 0:
+        if len(self.previous_actions) > 0:
             act_own_list = self.previous_actions["agent_" + str(side)]
             act_opp_list = self.previous_actions["agent_" + str(abs(1 - side))]
 
@@ -420,8 +430,8 @@ class VisionRobot(Robot):
     def observe(self, observation: dict, actions: dict, reward: float):
         "We still use the same observation method to keep track of current characters direction"
         self.observations.append(observation)
-        # we delete the oldest observation if we have more than 10 observations
-        if len(self.observations) > 50:
+        # Keep only the last 10 observations to bound memory usage
+        if len(self.observations) > 10:
             self.observations.pop(0)
 
         # detect the position of characters and ennemy based on color

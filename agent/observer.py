@@ -1,12 +1,14 @@
+from typing import List, Optional
+
 import numpy as np
 
-KEN_RED = [248, 0, 0]
-KEN_GREEN = [88, 176, 40]
+KEN_RED: List[int] = [248, 0, 0]
+KEN_GREEN: List[int] = [88, 176, 40]
 
 
 def detect_position_from_color(
-    observation: dict, color: list, epsilon=1, save_frame: bool = False
-) -> tuple:
+    observation: dict, color: List[int], epsilon: float = 1, save_frame: bool = False
+) -> Optional[tuple]:
     """
     Convert the observation from pixels to player coordinates.
 

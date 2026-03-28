@@ -1,21 +1,34 @@
+import os
+from typing import Tuple
+
 from llama_index.core.llms.function_calling import FunctionCallingLLM
 from llama_index.core.multi_modal_llms.base import MultiModalLLM
-import os
+
+SUPPORTED_TEXT_PROVIDERS = {
+    "openai", "anthropic", "mistral", "groq", "ollama",
+    "bedrock", "cerebras", "gemini", "anyscale", "fireworks", "together",
+}
+
+SUPPORTED_MULTIMODAL_PROVIDERS = {
+    "openai", "ollama", "mistral", "gemini", "anthropic",
+    "anyscale", "fireworks", "together",
+}
+
+
+def _parse_model_str(model_str: str, default_provider: str = "openai") -> Tuple[str, str]:
+    """Parse a 'provider:model_name' string into (provider, model_name)."""
+    split_result = model_str.split(":")
+    if len(split_result) == 1:
+        return default_provider, split_result[0]
+    elif len(split_result) > 2:
+        # Some model names contain ':', so rejoin everything after the provider
+        return split_result[0], ":".join(split_result[1:])
+    else:
+        return split_result[0], split_result[1]
 
 
 def get_client(model_str: str, temperature: float = 0.7) -> FunctionCallingLLM:
-    split_result = model_str.split(":")
-    if len(split_result) == 1:
-        # Assume default provider to be openai
-        provider = "openai"
-        model_name = split_result[0]
-    elif len(split_result) > 2:
-        # Some model names have :, so we need to join the rest of the string
-        provider = split_result[0]
-        model_name = ":".join(split_result[1:])
-    else:
-        provider = split_result[0]
-        model_name = split_result[1]
+    provider, model_name = _parse_model_str(model_str, default_provider="openai")
 
     if provider == "openai":
         from llama_index.llms.openai import OpenAI
@@ -81,22 +94,13 @@ def get_client(model_str: str, temperature: float = 0.7) -> FunctionCallingLLM:
             api_base="https://api.together.xyz/v1/",
         )
 
-    raise ValueError(f"Provider {provider} not found in models")
+    raise ValueError(
+        f"Unknown text provider '{provider}'. Supported: {sorted(SUPPORTED_TEXT_PROVIDERS)}"
+    )
 
 
 def get_client_multimodal(model_str: str, temperature: float = 0.7) -> MultiModalLLM:
-    split_result = model_str.split(":")
-    if len(split_result) == 1:
-        # Assume default provider to be openai
-        provider = "ollama"
-        model_name = split_result[0]
-    elif len(split_result) > 2:
-        # Some model names have :, so we need to join the rest of the string
-        provider = split_result[0]
-        model_name = ":".join(split_result[1:])
-    else:
-        provider = split_result[0]
-        model_name = split_result[1]
+    provider, model_name = _parse_model_str(model_str, default_provider="ollama")
 
     if provider == "openai":
         from llama_index.multi_modal_llms.openai import OpenAIMultiModal
@@ -153,4 +157,6 @@ def get_client_multimodal(model_str: str, temperature: float = 0.7) -> MultiModa
             api_base="https://api.together.xyz/v1/",
         )
 
-    raise ValueError(f"Provider {provider} not found in multimodal models")
+    raise ValueError(
+        f"Unknown multimodal provider '{provider}'. Supported: {sorted(SUPPORTED_MULTIMODAL_PROVIDERS)}"
+    )

@@ -20,7 +20,6 @@ li_models = [
 ]
 
 
-# Starting with vision tournamennt
 def main(
     model_1: str = "openai:gpt-4o-mini",
     model_2: str = "anthropic:claude-3-haiku-20240307",
@@ -31,15 +30,15 @@ def main(
     game = Game(
         render=True,
         player_1=Player1(
-            nickname="Daddy",
-            model="openai:gpt-4o-mini",
-            robot_type="vision",  # "vision" or "text"
+            nickname="Player1",
+            model=model_1,
+            robot_type=type_1,
             temperature=0.7,
         ),
         player_2=Player2(
-            nickname="Baby",
-            model="anthropic:claude-3-haiku-20240307",
-            robot_type="vision",
+            nickname="Player2",
+            model=model_2,
+            robot_type=type_2,
             temperature=0.7,
         ),
     )
