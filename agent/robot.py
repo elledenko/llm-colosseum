@@ -1,5 +1,7 @@
-import os
+import abc
+import base64
 import io
+import os
 import random
 import re
 import time
@@ -7,15 +9,13 @@ from collections import defaultdict
 from typing import Any, Dict, Generator, List, Literal, Optional
 
 import numpy as np
-import base64
 from gymnasium import spaces
 from loguru import logger
-
-from llama_index.core.schema import ImageNode
-from llama_index.core.llms import ChatMessage, ChatResponse
-from rich import print
 from PIL import Image
+
 from llama_index.core.base.llms.types import CompletionResponse
+from llama_index.core.llms import ChatMessage, ChatResponse
+from llama_index.core.schema import ImageNode
 
 from .config import (
     INDEX_TO_MOVE,
@@ -26,9 +26,8 @@ from .config import (
     X_SIZE,
     Y_SIZE,
 )
-from .observer import detect_position_from_color
 from .llm import get_client, get_client_multimodal
-import abc
+from .observer import detect_position_from_color
 
 
 class Robot(metaclass=abc.ABCMeta):
@@ -171,17 +170,28 @@ class Robot(metaclass=abc.ABCMeta):
             logger.debug("DISABLE_LLM is True, returning a random move")
             return [random.choice(list(META_INSTRUCTIONS_WITH_LOWER.keys()))] 
 
+        # Import display lazily to avoid circular imports
+        from eval.display import get_display
+
+        display = get_display()
+
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                if display:
+                    display.set_thinking(self.player_nb, True)
+                    display.clear_llm_buffer(self.player_nb)
+
                 llm_stream = self.call_llm()
 
                 # Stream the response for lower latency
                 llm_response = ""
 
                 for r in llm_stream:
-                    print(r.delta, end="")
                     llm_response += r.delta
+                    # Route streamed tokens through display manager
+                    if display:
+                        display.append_llm_token(self.player_nb, r.delta)
 
                     # The response is a bullet point list of moves. Use regex
                     matches = re.findall(r"- ([\w ]+)", llm_response)
@@ -191,14 +201,8 @@ class Robot(metaclass=abc.ABCMeta):
                     for move in moves:
                         cleaned_move_name = move.strip().lower()
                         if cleaned_move_name in META_INSTRUCTIONS_WITH_LOWER.keys():
-                            if self.player_nb == 1:
-                                print(
-                                    f"[red] Player {self.player_nb} move: {cleaned_move_name}"
-                                )
-                            elif self.player_nb == 2:
-                                print(
-                                    f"[green] Player {self.player_nb} move: {cleaned_move_name}"
-                                )
+                            if display:
+                                display.log_move(self.player_nb, cleaned_move_name)
                             valid_moves.append(cleaned_move_name)
                         else:
                             logger.debug(f"Invalid completion: {move}")
@@ -208,6 +212,9 @@ class Robot(metaclass=abc.ABCMeta):
                     if len(invalid_moves) > 1:
                         logger.warning(f"Many invalid moves: {invalid_moves}")
 
+                if display:
+                    display.set_thinking(self.player_nb, False)
+
                 if len(valid_moves) > 0:
                     logger.debug(f"Next moves: {valid_moves}")
                     return valid_moves
@@ -216,6 +223,8 @@ class Robot(metaclass=abc.ABCMeta):
 
             except Exception as e:
                 logger.error(f"LLM call failed (attempt {attempt + 1}/{max_retries}): {e}")
+                if display:
+                    display.set_thinking(self.player_nb, False)
                 if attempt < max_retries - 1:
                     time.sleep(0.5 * (attempt + 1))  # Simple backoff
 

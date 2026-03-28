@@ -7,15 +7,16 @@ from typing import List, Optional
 
 from agent import KEN_GREEN, KEN_RED, TextRobot, VisionRobot
 from agent.config import MODELS
+from agent.robot import Robot
 from diambra.arena import (
     EnvironmentSettingsMultiAgent,
     RecordingSettings,
     SpaceTypes,
     make,
 )
-from rich import print
+from loguru import logger
 
-from agent.robot import Robot
+from eval.display import DisplayManager, get_display, set_display
 
 
 def generate_random_model(openai: bool = False, mistral: bool = True):
@@ -110,7 +111,11 @@ class Player1(Player):
                 model=self.model,
                 player_nb=1,
             )
-        print(f"[red] Player 1 using: {self.model}")
+        display = get_display()
+        if display:
+            display.set_player_info(1, self.nickname, self.model, self.robot_type)
+        else:
+            logger.info(f"Player 1 using: {self.model}")
         self.verify_provider_name()
 
 
@@ -154,7 +159,11 @@ class Player2(Player):
                 model=self.model,
                 player_nb=2,
             )
-        print(f"[green] Player 2 using: {self.model}")
+        display = get_display()
+        if display:
+            display.set_player_info(2, self.nickname, self.model, self.robot_type)
+        else:
+            logger.info(f"Player 2 using: {self.model}")
         self.verify_provider_name()
 
 
@@ -329,6 +338,10 @@ class Game:
         """
         Runs the game with the given settings.
         """
+        display = get_display()
+        if display:
+            display.start()
+
         try:
             self.actions = {
                 "agent_0": 0,
@@ -359,16 +372,12 @@ class Game:
                 if self.player_1 is None:
                     # If player 1 is not provided, we use the controller
                     try:
-                        # On MacOS we need to install pyobjc
-                        # pip install pyobjc
-                        # https://stackoverflow.com/questions/76434535/attributeerror-super-object-has-no-attribute-init
-
                         controller_actions = self.controller.get_actions()
                         actions["agent_1"] = (
                             controller_actions[0] + controller_actions[1]
                         )
                     except Exception as e:
-                        print(e)
+                        logger.debug(f"Controller error: {e}")
 
                 if "agent_0" not in actions:
                     actions["agent_0"] = 0
@@ -386,6 +395,19 @@ class Game:
                 self.observation = observation
                 self.reward += reward
 
+                # Feed live game state to the display manager
+                if display:
+                    display.update_health(
+                        observation["P1"]["health"][0],
+                        observation["P2"]["health"][0],
+                    )
+                    display.update_super_bar(
+                        observation["P1"]["super_bar"][0],
+                        observation["P2"]["super_bar"][0],
+                    )
+                    display.update_reward(self.reward)
+                    display.refresh()
+
                 p1_wins = observation["P1"]["wins"][0]
                 p2_wins = observation["P2"]["wins"][0]
 
@@ -394,21 +416,36 @@ class Game:
                         player1_thread.running = False
                     player2_thread.running = False
                     episode.player_1_won = p1_wins == 1
-                    if episode.player_1_won:
-                        print(
-                            f"[red] Player1 {self.player_1.robot.model} '{self.player_1.nickname}' won!"
-                        )
+
+                    winner_tag = "P1" if episode.player_1_won else "P2"
+                    if display:
+                        display.set_winner(winner_tag)
+                        display.refresh()
                     else:
-                        print(
-                            f"[green] Player2 {self.player_2.robot.model} {self.player_2.nickname} won!"
-                        )
+                        if episode.player_1_won:
+                            logger.info(
+                                f"Player1 {self.player_1.robot.model} '{self.player_1.nickname}' won!"
+                            )
+                        else:
+                            logger.info(
+                                f"Player2 {self.player_2.robot.model} '{self.player_2.nickname}' won!"
+                            )
+
                     episode.save()
                     self.env.close()
+
+                    # Show post-game summary
+                    if display:
+                        display.stop()
+                        display.show_post_game_summary()
+
                     return episode.player_1_won
         except Exception as e:
-            print(f"Exception: {e}")
+            logger.error(f"Game exception: {e}")
             traceback.print_exc()
         finally:
+            if display:
+                display.stop()
             try:
                 if self.player_1 is None:
                     self.controller.stop()
