@@ -1,6 +1,7 @@
 import sys
 
 from dotenv import load_dotenv
+from eval.display import DisplayManager, set_display
 from eval.game import Game, Player1, Player2
 from loguru import logger
 
@@ -11,7 +12,8 @@ load_dotenv()
 
 
 def main():
-    # Environment Settings
+    display = DisplayManager()
+    set_display(display)
 
     game = Game(
         render=True,
