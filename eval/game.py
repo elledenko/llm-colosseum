@@ -156,11 +156,11 @@ class Episode:
         # Write the results to an existing csv with headers "player_1", "player_2", "winner"
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
-        # Verifty if the file exists
+        # Verify if the file exists
         if not os.path.exists("results.csv"):
             with open("results.csv", "w") as f:
                 f.write(
-                    "id,player_1_model,player_1_robot_type, player_1_temperature, player_2_model,player_2_robot_type,player_2_temperature, player_1_won\n"
+                    "id,player_1_model,player_1_robot_type,player_1_temperature,player_2_model,player_2_robot_type,player_2_temperature,player_1_won\n"
                 )
 
         with open("results.csv", "a") as f:
@@ -289,7 +289,12 @@ class Game:
         """
         pass
 
-    def _determine_winner(self, episode: Episode):
+    def _determine_winner(self, episode: Episode) -> Optional[bool]:
+        """Determine the winner based on remaining health.
+
+        Returns True if player 1 won, False if player 2 won, None for a draw.
+        Also sets episode.player_1_won.
+        """
         p1_health = self.observation["P1"]["health"][0]
         p2_health = self.observation["P2"]["health"][0]
         if p1_health > p2_health:
@@ -297,7 +302,8 @@ class Game:
         elif p2_health > p1_health:
             episode.player_1_won = False
         else:
-            return "Draw"
+            episode.player_1_won = None
+        return episode.player_1_won
 
     def run(self):
         """
@@ -378,22 +384,17 @@ class Game:
                         )
                     episode.save()
                     self.env.close()
-                    ##TODO: Replace the line bellow by pass
                     return episode.player_1_won
         except Exception as e:
-            # self.env.close()
             print(f"Exception: {e}")
-            traceback.print_exception(limit=10)
-            traceback.print_tb(limit=40)
-            if self.player_1 is None:
-                self.controller.stop()
-            self.env.close()
-        try:
-            if self.player_1 is None:
-                self.controller.stop()
-            self.env.close()
-        except Exception as e:
-            pass  # Ignore the exception
+            traceback.print_exc()
+        finally:
+            try:
+                if self.player_1 is None:
+                    self.controller.stop()
+                self.env.close()
+            except Exception:
+                pass  # Environment may already be closed
         return 0
 
 

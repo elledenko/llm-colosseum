@@ -163,12 +163,12 @@ INDEX_TO_MOVE = {v: k for k, v in MOVES.items()}
 
 X_SIZE = 384
 Y_SIZE = 224
-# TODO : Adds some combos to this
 REAL_MOVE_LIST = [
     "No-Move",
     "Left",
     "Left+Up",
     "Up",
+    "Up+Right",
     "Right",
     "Right+Down",
     "Down",
